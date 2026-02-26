@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 Phase: 1 of 6 (Secure Access and Safety Guardrails)
 Plan: 0 of 3 in current phase
 Status: Ready to plan
-Last activity: 2026-02-25 — Executed wizard + remote smoke checks and locked inserted Phase 2.2 (WinRM runtime path)
+Last activity: 2026-02-26 — Finalized host-centric remote credential wizard updates and added AGENTS operational handoff for VanguardForge validation.
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -50,7 +50,10 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- Validate this branch behavior in VanguardForge RT/PT container context (not local-only runtime).
+- Run end-to-end wizard and WinRM smoke checks against `domain.nuthatch-chickadee.ts.net` from container runtime.
+- Confirm Tailscale serve mapping and remote credential lifecycle (add host/delete host/delete credentials) in container environment.
+- Operational next-run checklist is in `AGENTS.md`.
 
 ### Blockers/Concerns
 

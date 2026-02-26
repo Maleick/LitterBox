@@ -348,6 +348,8 @@ You can store remote Windows credential metadata using the web wizard:
 - `GET /setup/remote-credentials`
 - `POST /setup/remote-credentials`
 - `POST /setup/remote-credentials/delete`
+- `POST /setup/remote-credentials/hosts`
+- `POST /setup/remote-credentials/hosts/delete`
 
 Security behavior:
 
@@ -365,14 +367,7 @@ Default credential path:
 
 - `/opt/LitterBox/.env.remote`
 
-Change default credential file path at startup:
-
-```bash
-export LITTERBOX_REMOTE_ENV_PATH="/opt/LitterBox/.env.remote.custom"
-python litterbox.py
-```
-
-You can also override the credential file path per wizard request using the `env_path` field.
+The wizard always uses this fixed path.
 
 Per-target key format:
 
@@ -387,6 +382,11 @@ Runtime behavior:
 
 - SSH targets continue to use key-based SSH settings from `Config/config.yaml`.
 - WinRM targets consume credentials from `.env.remote` at runtime.
+- Host targets in the wizard are sourced from `analysis.remote.targets` (WinRM targets only).
+- Adding a host in the wizard creates a new WinRM target by cloning `analysis.remote.targets.domain`.
+- Deleting a host in the wizard deletes both config target metadata and stored credentials for that target.
+- New target IDs are derived from the first hostname label (for example, `server01.example.ts.net` becomes `server01`).
+- `Config/config.yaml` updates are written with YAML safe dump, so formatting/comments may be normalized.
 - Account normalization for WinRM:
   - `account_type=domain` => `DOMAIN\\username` (when domain is set)
   - `account_type=local` => `.\\username` unless username is already qualified

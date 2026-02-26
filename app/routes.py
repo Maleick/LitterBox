@@ -32,6 +32,11 @@ from .remote_credentials import (
     resolve_remote_env_path,
     upsert_target_credentials,
 )
+from .remote_targets import (
+    add_winrm_host_target,
+    delete_winrm_host_target,
+    list_winrm_targets,
+)
 
 class RouteHelpers:
     """Centralized helper class to eliminate code duplication across routes"""
@@ -220,6 +225,7 @@ def register_routes(app):
     route_helpers = RouteHelpers(app.config, app.logger)
     utils = route_helpers.utils
     remote_env_path = resolve_remote_env_path(DEFAULT_REMOTE_ENV_PATH)
+    wizard_env_path = resolve_remote_env_path("/opt/LitterBox/.env.remote")
 
     def _forbidden_response():
         return "Forbidden", 403
@@ -233,20 +239,8 @@ def register_routes(app):
     def _configured_remote_targets():
         return _configured_remote_config().get("targets", {}) or {}
 
-    def _credential_targets():
-        remote_cfg = _configured_remote_config()
-        targets = remote_cfg.get("targets", {}) or {}
-        credential_targets = []
-        for target_id, target_cfg in targets.items():
-            if resolve_target_transport(remote_cfg, target_cfg or {}) != "winrm":
-                continue
-            credential_targets.append(
-                {
-                    "id": target_id,
-                    "host": ((target_cfg or {}).get("host") or "").strip(),
-                }
-            )
-        return credential_targets
+    def _credential_hosts():
+        return list_winrm_targets(app.config)
 
     def _has_masked_entry(entry):
         return any(
@@ -277,21 +271,6 @@ def register_routes(app):
             value = request.form.get(key)
         return value if isinstance(value, str) else ""
 
-    def _extract_request_value(key):
-        if request.method == "GET":
-            value = request.args.get(key)
-            return value if isinstance(value, str) else ""
-
-        value = _extract_post_value(key)
-        if value:
-            return value
-        query_value = request.args.get(key)
-        return query_value if isinstance(query_value, str) else ""
-
-    def _resolve_remote_env_path_for_request():
-        requested_path = _extract_request_value("env_path").strip()
-        return resolve_remote_env_path(requested_path or None)
-
     def _validate_setup_token(submitted_token):
         configured_token = os.environ.get("LITTERBOX_WIZARD_TOKEN")
         if not configured_token:
@@ -310,13 +289,12 @@ def register_routes(app):
         if not _is_localhost_request(request):
             return _forbidden_response()
 
-        selected_env_path = _resolve_remote_env_path_for_request()
-        credential_targets = _credential_targets()
-        target_ids = [target["id"] for target in credential_targets]
+        selected_env_path = wizard_env_path
+        credential_hosts = _credential_hosts()
         existing_entries = list_target_credentials(selected_env_path)
         stored_entries = []
-        for target in credential_targets:
-            target_id = target["id"]
+        for target in credential_hosts:
+            target_id = target["target_id"]
             entry = _masked_target_entry(existing_entries, target_id)
             if not _has_masked_entry(entry):
                 continue
@@ -329,10 +307,8 @@ def register_routes(app):
             )
         return render_template(
             'remote_credentials.html',
-            target_ids=target_ids,
-            credential_targets=credential_targets,
+            credential_hosts=credential_hosts,
             stored_entries=stored_entries,
-            env_file_path=selected_env_path,
             config=app.config,
         )
 
@@ -346,20 +322,22 @@ def register_routes(app):
         if not _validate_setup_token(submitted_token):
             return _forbidden_response()
 
-        selected_env_path = _resolve_remote_env_path_for_request()
-        credential_target_ids = {target["id"] for target in _credential_targets()}
+        selected_env_path = wizard_env_path
+        credential_hosts = _credential_hosts()
+        credential_host_map = {target["target_id"]: target for target in credential_hosts}
         target_id = _extract_post_value("target_id").strip()
-        host = _extract_post_value("host").strip()
         domain = _extract_post_value("domain").strip()
         account_type = _extract_post_value("account_type").strip().lower()
         username = _extract_post_value("username").strip()
         password = _extract_post_value("password")
 
         errors = {}
-        if target_id not in credential_target_ids:
+        selected_target = credential_host_map.get(target_id)
+        if not selected_target:
             errors["target_id"] = "Unknown target_id"
-        if not host:
-            errors["host"] = "host is required"
+        target_host = (selected_target or {}).get("host", "").strip()
+        if selected_target and not target_host:
+            errors["target_id"] = "Selected target host is missing from configuration"
         if account_type not in {"domain", "local"}:
             errors["account_type"] = "account_type must be domain or local"
         if not username:
@@ -374,7 +352,7 @@ def register_routes(app):
             selected_env_path,
             target_id,
             {
-                "host": host,
+                "host": target_host,
                 "domain": domain,
                 "account_type": account_type,
                 "username": username,
@@ -393,6 +371,66 @@ def register_routes(app):
             }
         ), 200
 
+    @app.route('/setup/remote-credentials/hosts', methods=['POST'])
+    @error_handler
+    def setup_remote_credentials_add_host():
+        if not _is_localhost_request(request):
+            return _forbidden_response()
+
+        submitted_token = _extract_post_value("token").strip()
+        if not _validate_setup_token(submitted_token):
+            return _forbidden_response()
+
+        host = _extract_post_value("host").strip()
+        if not host:
+            return jsonify({"status": "error", "error": "host is required"}), 400
+
+        try:
+            created = add_winrm_host_target(host=host)
+        except ValueError as exc:
+            return jsonify({"status": "error", "error": str(exc)}), 400
+
+        app.config.update(created["config"])
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Host target added",
+                "target": created["target"],
+                "credential_hosts": _credential_hosts(),
+            }
+        ), 200
+
+    @app.route('/setup/remote-credentials/hosts/delete', methods=['POST'])
+    @error_handler
+    def setup_remote_credentials_delete_host():
+        if not _is_localhost_request(request):
+            return _forbidden_response()
+
+        submitted_token = _extract_post_value("token").strip()
+        if not _validate_setup_token(submitted_token):
+            return _forbidden_response()
+
+        target_id = _extract_post_value("target_id").strip()
+        if not target_id:
+            return jsonify({"status": "error", "error": "target_id is required"}), 400
+
+        try:
+            deleted_target = delete_winrm_host_target(target_id=target_id)
+        except ValueError as exc:
+            return jsonify({"status": "error", "error": str(exc)}), 400
+
+        app.config.update(deleted_target["config"])
+        deleted_credentials = delete_target_credentials(wizard_env_path, target_id)
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Host target deleted",
+                "target": deleted_target["target"],
+                "deleted_credentials": deleted_credentials,
+                "credential_hosts": _credential_hosts(),
+            }
+        ), 200
+
     @app.route('/setup/remote-credentials/delete', methods=['POST'])
     @error_handler
     def setup_remote_credentials_delete():
@@ -403,8 +441,8 @@ def register_routes(app):
         if not _validate_setup_token(submitted_token):
             return _forbidden_response()
 
-        selected_env_path = _resolve_remote_env_path_for_request()
-        credential_target_ids = {target["id"] for target in _credential_targets()}
+        selected_env_path = wizard_env_path
+        credential_target_ids = {target["target_id"] for target in _credential_hosts()}
         target_id = _extract_post_value("target_id").strip()
 
         if target_id not in credential_target_ids:
