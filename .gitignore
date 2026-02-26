@@ -6,3 +6,5 @@ Results/
 DoppelgangerDB/Blender
 venv/
 Scanners/HolyGrail/Analysis
+.env.remote
+.env.remote.*

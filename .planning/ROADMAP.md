@@ -7,13 +7,15 @@ This roadmap evolves LitterBox from a capable brownfield sandbox into a safer, m
 ## Phases
 
 **Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
+- Integer phases (1, 2, 3, 4): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Secure Access and Safety Guardrails** - Protect high-risk operations and establish safe execution boundaries
 - [ ] **Phase 2: Analysis Job Orchestration and API Compatibility** - Stabilize long-running analysis workflows without breaking clients
+- [ ] **Phase 2.1 [INSERTED]: Remote Windows Execution Over Tailscale** - Execute scanners remotely over SSH without adding custom agent services
+- [ ] **Phase 2.2 [INSERTED]: WinRM Runtime Path and Domain Target Migration** - Add credential-backed WinRM transport with explicit domain controller target routing
 - [ ] **Phase 3: Modularization and Regression Test Baseline** - Decompose high-risk modules and add automated coverage
 - [ ] **Phase 4: Observability and Retention Hardening** - Strengthen operational visibility and lifecycle controls
 
@@ -51,9 +53,44 @@ Plans:
 - [ ] 02-02: Add async analysis and status retrieval endpoints with stable transitions
 - [ ] 02-03: Enforce response envelope/version compatibility and client regression checks
 
+### Phase 2.1 [INSERTED]: Remote Windows Execution Over Tailscale
+**Goal**: Support Linux-hosted LitterBox with SSH-based scanner execution on remote Windows targets over Tailscale.
+**Depends on**: Phase 2
+**Requirements**: REM-01, REM-02, REM-03, REM-04, REM-05
+**Success Criteria** (what must be TRUE):
+  1. Analysis routes can select remote target by default or per-request `execution_target` override.
+  2. Uploaded samples are staged to remote Windows workdir, analyzed, and remote artifacts are retrieved to local `Results/`.
+  3. Remote execution failures honor configurable local fallback policy without breaking response compatibility.
+  4. Health endpoint reports remote target preflight status (tailscale, SSH auth, scanner path checks).
+**Plans**: 4 plans
+
+Plans:
+- [ ] 02-04: Add execution runner abstraction with local and SSH remote implementations
+- [ ] 02-05: Implement remote target routing, staging/retrieval workflow, and fallback policy
+- [ ] 02-06: Extend `/analyze/*` and `/holygrail` with optional `execution_target` override
+- [ ] 02-07: Add remote setup runbook and health diagnostics for operational readiness
+
+### Phase 2.2 [INSERTED]: WinRM Runtime Path and Domain Target Migration
+**Goal**: Add WinRM transport support and migrate domain-controller execution to an explicit `domain` target while preserving SSH compatibility.
+**Depends on**: Phase 2.1
+**Requirements**: WRM-01, WRM-02, WRM-03, WRM-04, WRM-05
+**Success Criteria** (what must be TRUE):
+  1. Config supports default remote transport semantics and dedicated `domain` target definition.
+  2. Execution routing selects SSH or WinRM per target without breaking existing SSH target behavior.
+  3. Runtime consumes `.env.remote` credentials safely for domain and local account modes.
+  4. Health endpoint reports WinRM preflight status (reachability, auth, scanner path checks).
+  5. Temporary `server2025` domain-host mapping is migrated to `domain` target with documented compatibility behavior.
+**Plans**: 4 plans
+
+Plans:
+- [ ] 02-08: Extend remote config schema (`transport`, WinRM target fields) and add dedicated `domain` target
+- [ ] 02-09: Implement `WinRmRemoteRunner` and transport-aware runner selection
+- [ ] 02-10: Add runtime credential loading from `.env.remote` with account-mode normalization (`DOMAIN\\user` and local forms)
+- [ ] 02-11: Expand `/health` with WinRM diagnostics and publish migration/troubleshooting runbook
+
 ### Phase 3: Modularization and Regression Test Baseline
 **Goal**: Reduce maintenance risk by splitting monolithic modules and establishing automated tests.
-**Depends on**: Phase 2
+**Depends on**: Phase 2.2
 **Requirements**: QLT-01, QLT-02, QLT-03, QLT-04
 **Success Criteria** (what must be TRUE):
   1. Route/orchestration logic is split into maintainable modules without behavior regressions.
@@ -84,11 +121,13 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4
+Phases execute in numeric order: 1 → 2 → 2.1 → 2.2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Secure Access and Safety Guardrails | 0/3 | Not started | - |
 | 2. Analysis Job Orchestration and API Compatibility | 0/3 | Not started | - |
+| 2.1 [INSERTED] Remote Windows Execution Over Tailscale | 0/4 | Not started | - |
+| 2.2 [INSERTED] WinRM Runtime Path and Domain Target Migration | 0/4 | Not started | - |
 | 3. Modularization and Regression Test Baseline | 0/3 | Not started | - |
 | 4. Observability and Retention Hardening | 0/2 | Not started | - |

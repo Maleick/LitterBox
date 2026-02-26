@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 
 ## Current Position
 
-Phase: 1 of 4 (Secure Access and Safety Guardrails)
+Phase: 1 of 6 (Secure Access and Safety Guardrails)
 Plan: 0 of 3 in current phase
 Status: Ready to plan
-Last activity: 2026-02-25 — Project initialized, research/requirements/roadmap created
+Last activity: 2026-02-25 — Executed wizard + remote smoke checks and locked inserted Phase 2.2 (WinRM runtime path)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -44,7 +44,9 @@ Recent decisions affecting current work:
 
 - Initialization: Brownfield modernization path selected.
 - Configuration: Auto mode defaults applied (`quick`, `balanced`, quality gates enabled).
-- Roadmap: 4-phase sequence prioritizing security, reliability, maintainability, then operations.
+- Roadmap: inserted Phase 2.1 for remote Windows execution over Tailscale (SSH remoting, no custom agent service).
+- Roadmap: inserted Phase 2.2 for WinRM runtime path with dedicated `domain` target migration.
+- Operations: validated wizard storage (`.env.remote` mode `0600`) and captured smoke status (domain visible/reachable on tailnet, SSH timeout; win11 DNS unresolved).
 
 ### Pending Todos
 
@@ -56,6 +58,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-25 19:30 UTC
-Stopped at: New-project initialization complete; ready for phase discussion/planning
+Last session: 2026-02-25 19:56 UTC
+Stopped at: Remote execution implementation and roadmap insertion in progress
 Resume file: None

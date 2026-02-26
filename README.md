@@ -22,6 +22,7 @@
   - [Windows Installation](#windows-installation)
   - [Linux Installation (Docker)](#linux-installation)
 - [Configuration](#configuration)
+- [Remote Windows Execution](#remote-windows-execution)
 - [Client Libraries](#client-libraries)
 - [Contributing](#contributing)
 - [Security Advisory](#security-advisory)
@@ -176,10 +177,21 @@ POST   /analyze/dynamic/<hash>    # Perform dynamic file analysis
 POST   /analyze/dynamic/<pid>     # Conduct process analysis
 ```
 
+Optional target override for remote execution:
+```http
+POST   /analyze/<analysis_type>/<target>?execution_target=<target-id>
+POST   /analyze/<analysis_type>/<target>   {"execution_target": "win11", "args": []}
+```
+
 ### HolyGrail BYOVD Analysis
 ```http
 POST   /holygrail                 # Upload driver for BYOVD analysis
 GET    /holygrail?hash=<hash>     # Execute BYOVD analysis on uploaded driver
+```
+
+Optional target override for remote execution:
+```http
+GET    /holygrail?hash=<hash>&execution_target=<target-id>
 ```
 
 ### Doppelganger API
@@ -309,12 +321,76 @@ Once installation completes, LitterBox provides:
 
 ## Configuration
 
-All settings are stored in `config/config.yml`. Edit this file to:
+All settings are stored in `Config/config.yaml`. Edit this file to:
 
 - Change server settings (host/port)
 - Set allowed file types
 - Configure analysis tools
 - Adjust timeouts
+- Configure remote execution targets under `analysis.remote`
+
+## Remote Windows Execution
+
+LitterBox can run on Linux and execute scanners on remote Windows hosts over Tailscale using transport-aware remoting (`ssh` and `winrm`) without a custom agent service.
+
+- Configure targets in `Config/config.yaml` under `analysis.remote.targets`
+- Set a default transport with `analysis.remote.transport` and optional per-target override via `analysis.remote.targets.<id>.transport`
+- Set `analysis.remote.default_target` for default routing
+- Keep `analysis.remote.local_fallback: true` to allow automatic local fallback if a remote target is unavailable
+- Override target per request with `execution_target`
+
+Detailed setup and troubleshooting: [docs/REMOTE_WINDOWS_TAILSCALE.md](docs/REMOTE_WINDOWS_TAILSCALE.md)
+
+### Remote Credential Wizard (`.env.remote`)
+
+You can store remote Windows credential metadata using the web wizard:
+
+- `GET /setup/remote-credentials`
+- `POST /setup/remote-credentials`
+- `POST /setup/remote-credentials/delete`
+
+Security behavior:
+
+- Wizard access is restricted to localhost requests (`127.0.0.1` or `::1`)
+- Save/delete requests require a setup token from `LITTERBOX_WIZARD_TOKEN`
+
+Set token before starting LitterBox:
+
+```bash
+export LITTERBOX_WIZARD_TOKEN="replace-with-long-random-token"
+python litterbox.py
+```
+
+Default credential path:
+
+- `/opt/LitterBox/.env.remote`
+
+Change default credential file path at startup:
+
+```bash
+export LITTERBOX_REMOTE_ENV_PATH="/opt/LitterBox/.env.remote.custom"
+python litterbox.py
+```
+
+You can also override the credential file path per wizard request using the `env_path` field.
+
+Per-target key format:
+
+- `LB_REMOTE_TARGET_<TARGET_ID_UPPER_SNAKE>_HOST`
+- `LB_REMOTE_TARGET_<TARGET_ID_UPPER_SNAKE>_DOMAIN`
+- `LB_REMOTE_TARGET_<TARGET_ID_UPPER_SNAKE>_ACCOUNT_TYPE`
+- `LB_REMOTE_TARGET_<TARGET_ID_UPPER_SNAKE>_USERNAME`
+- `LB_REMOTE_TARGET_<TARGET_ID_UPPER_SNAKE>_PASSWORD`
+- `LB_REMOTE_TARGET_<TARGET_ID_UPPER_SNAKE>_UPDATED_AT`
+
+Runtime behavior:
+
+- SSH targets continue to use key-based SSH settings from `Config/config.yaml`.
+- WinRM targets consume credentials from `.env.remote` at runtime.
+- Account normalization for WinRM:
+  - `account_type=domain` => `DOMAIN\\username` (when domain is set)
+  - `account_type=local` => `.\\username` unless username is already qualified
+- If `domain` credentials are missing and `server2025` points to the same host, credentials are auto-migrated to `domain`.
 
 ## Client Libraries
 
@@ -370,4 +446,3 @@ This project incorporates technologies from the following contributors:
 ## Interface
 
 ![LitterBox Demo](Screenshots/lb-demo.gif)
-

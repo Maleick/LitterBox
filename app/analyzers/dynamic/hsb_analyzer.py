@@ -29,24 +29,20 @@ class HSBAnalyzer(DynamicAnalyzer):
         """
         self.pid = pid
         try:
-            tool_config = self.config['analysis']['dynamic']['hsb']
+            tool_config = self._resolve_tool_config('dynamic', 'hsb')
             command = tool_config['command'].format(
                 tool_path=tool_config['tool_path'],
                 pid=pid
             )
 
-            process = subprocess.Popen(
+            result = self._execute_command(
                 command,
+                timeout=tool_config['timeout'],
                 shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True
             )
 
-            stdout, stderr = process.communicate(timeout=tool_config['timeout'])
-
             # 1) Strip ANSI color codes
-            stdout = remove_ansi_escape_sequences(stdout)
+            stdout = remove_ansi_escape_sequences(result.stdout)
 
             # 2) Parse output
             parsed_findings = self._parse_output(stdout)
@@ -55,9 +51,9 @@ class HSBAnalyzer(DynamicAnalyzer):
             self._enrich_findings(parsed_findings)
 
             self.results = {
-                'status': 'completed' if process.returncode == 0 else 'failed',
+                'status': 'completed' if result.returncode == 0 else 'failed',
                 'findings': parsed_findings,
-                'errors': stderr if stderr else None
+                'errors': result.stderr if result.stderr else None
             }
 
         except subprocess.TimeoutExpired:

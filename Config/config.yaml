@@ -24,6 +24,110 @@ utils:
 analysis:
   process:
     init_wait_time: 5  # Time in seconds to wait for payload initialization
+
+  remote:
+    enabled: false
+    transport: "ssh"  # Default transport; targets can override (planned winrm support).
+    default_target: "win11"
+    local_fallback: true
+    targets:
+      win11:
+        host: "win11.nuthatch-chickadee.ts.net"
+        port: 22
+        user: "analyst"
+        ssh_key_path: "~/.ssh/litterbox-win11"
+        transport: "ssh"
+        platform: "windows11-enterprise"
+        role: "analysis"
+        remote_workdir: "C:\\LitterBox\\RemoteExecution"
+        scanner_paths:
+          yara:
+            tool_path: "C:\\LitterBox\\Scanners\\Yara\\yara64.exe"
+            rules_path: "C:\\LitterBox\\Scanners\\Yara\\LitterBox.yar"
+          checkplz:
+            tool_path: "C:\\LitterBox\\Scanners\\CheckPlz\\CheckPlz.exe"
+          stringnalyzer:
+            tool_path: "C:\\LitterBox\\Scanners\\Stringnalyzer\\Stringnalyzer.exe"
+          pe_sieve:
+            tool_path: "C:\\LitterBox\\Scanners\\PE-Sieve\\pe-sieve.exe"
+          moneta:
+            tool_path: "C:\\LitterBox\\Scanners\\Moneta\\Moneta64.exe"
+          patriot:
+            tool_path: "C:\\LitterBox\\Scanners\\Patriot\\Patriot.exe"
+          hsb:
+            tool_path: "C:\\LitterBox\\Scanners\\HuntSleepingBeacons\\Hunt-Sleeping-Beacons.exe"
+          rededr:
+            tool_path: "C:\\LitterBox\\Scanners\\RedEdr\\RedEdr.exe"
+          holygrail:
+            tool_path: "C:\\LitterBox\\Scanners\\HolyGrail\\HolyGrail.exe"
+            policies_path: "C:\\LitterBox\\Scanners\\HolyGrail\\Policies\\"
+            results_path: "C:\\LitterBox\\Scanners\\HolyGrail\\Analysis\\"
+      server2025:
+        host: "server2025.nuthatch-chickadee.ts.net"
+        port: 22
+        user: "analyst"
+        ssh_key_path: "~/.ssh/litterbox-server2025"
+        transport: "ssh"
+        platform: "windows-server-2025"
+        role: "domain-controller-or-analysis"
+        remote_workdir: "C:\\LitterBox\\RemoteExecution"
+        scanner_paths:
+          yara:
+            tool_path: "C:\\LitterBox\\Scanners\\Yara\\yara64.exe"
+            rules_path: "C:\\LitterBox\\Scanners\\Yara\\LitterBox.yar"
+          checkplz:
+            tool_path: "C:\\LitterBox\\Scanners\\CheckPlz\\CheckPlz.exe"
+          stringnalyzer:
+            tool_path: "C:\\LitterBox\\Scanners\\Stringnalyzer\\Stringnalyzer.exe"
+          pe_sieve:
+            tool_path: "C:\\LitterBox\\Scanners\\PE-Sieve\\pe-sieve.exe"
+          moneta:
+            tool_path: "C:\\LitterBox\\Scanners\\Moneta\\Moneta64.exe"
+          patriot:
+            tool_path: "C:\\LitterBox\\Scanners\\Patriot\\Patriot.exe"
+          hsb:
+            tool_path: "C:\\LitterBox\\Scanners\\HuntSleepingBeacons\\Hunt-Sleeping-Beacons.exe"
+          rededr:
+            tool_path: "C:\\LitterBox\\Scanners\\RedEdr\\RedEdr.exe"
+          holygrail:
+            tool_path: "C:\\LitterBox\\Scanners\\HolyGrail\\HolyGrail.exe"
+            policies_path: "C:\\LitterBox\\Scanners\\HolyGrail\\Policies\\"
+            results_path: "C:\\LitterBox\\Scanners\\HolyGrail\\Analysis\\"
+      domain:
+        host: "domain.nuthatch-chickadee.ts.net"
+        port: 22
+        user: "analyst"
+        ssh_key_path: "~/.ssh/litterbox-domain"
+        transport: "winrm"
+        winrm_port: 5986
+        winrm_scheme: "https"
+        auth_mode: "ntlm"
+        server_cert_validation: false
+        platform: "windows-server-2025"
+        role: "domain-controller"
+        remote_workdir: "C:\\LitterBox\\RemoteExecution"
+        scanner_paths:
+          yara:
+            tool_path: "C:\\LitterBox\\Scanners\\Yara\\yara64.exe"
+            rules_path: "C:\\LitterBox\\Scanners\\Yara\\LitterBox.yar"
+          checkplz:
+            tool_path: "C:\\LitterBox\\Scanners\\CheckPlz\\CheckPlz.exe"
+          stringnalyzer:
+            tool_path: "C:\\LitterBox\\Scanners\\Stringnalyzer\\Stringnalyzer.exe"
+          pe_sieve:
+            tool_path: "C:\\LitterBox\\Scanners\\PE-Sieve\\pe-sieve.exe"
+          moneta:
+            tool_path: "C:\\LitterBox\\Scanners\\Moneta\\Moneta64.exe"
+          patriot:
+            tool_path: "C:\\LitterBox\\Scanners\\Patriot\\Patriot.exe"
+          hsb:
+            tool_path: "C:\\LitterBox\\Scanners\\HuntSleepingBeacons\\Hunt-Sleeping-Beacons.exe"
+          rededr:
+            tool_path: "C:\\LitterBox\\Scanners\\RedEdr\\RedEdr.exe"
+          holygrail:
+            tool_path: "C:\\LitterBox\\Scanners\\HolyGrail\\HolyGrail.exe"
+            policies_path: "C:\\LitterBox\\Scanners\\HolyGrail\\Policies\\"
+            results_path: "C:\\LitterBox\\Scanners\\HolyGrail\\Analysis\\"
   
   doppelganger:
     db:
@@ -107,6 +211,4 @@ analysis:
       tool_path: ".\\Scanners\\RedEdr\\RedEdr.exe"
       command: "{tool_path} -e --trace {process_name}"
       timeout: 120
-
-
 

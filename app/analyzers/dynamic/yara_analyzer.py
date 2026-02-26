@@ -1,6 +1,5 @@
 # app/analyzers/dynamic/yara_analyzer.py
 
-import subprocess
 import re
 from .base import DynamicAnalyzer
 import os
@@ -9,35 +8,32 @@ class YaraDynamicAnalyzer(DynamicAnalyzer):
     def analyze(self, pid):
         self.pid = pid
         try:
-            tool_config = self.config['analysis']['dynamic']['yara']
+            tool_config = self._resolve_tool_config('dynamic', 'yara')
             command = tool_config['command'].format(
                 tool_path=tool_config['tool_path'],
                 rules_path=tool_config['rules_path'],
                 pid=pid
             )
             
-            process = subprocess.Popen(
+            result = self._execute_command(
                 command,
+                timeout=tool_config['timeout'],
                 shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True
             )
             
-            stdout, stderr = process.communicate(timeout=tool_config['timeout'])
-            matches = self._parse_output(stdout)
+            matches = self._parse_output(result.stdout)
 
             # Map the matched strings to the rule definitions
             self._map_output_to_rule_strings(matches)
             
             self.results = {
-                'status': 'completed' if process.returncode == 0 else 'failed',
+                'status': 'completed' if result.returncode == 0 else 'failed',
                 'scan_info': {
                     'target': f"PID: {self.pid}",
                     'rules_file': tool_config['rules_path']
                 },
                 'matches': matches,
-                'errors': stderr if stderr else None
+                'errors': result.stderr if result.stderr else None
             }
             
         except Exception as e:

@@ -5,7 +5,21 @@ import logging
 from colorama import Fore, Style, init
 
 def load_config():
-    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'config.yaml')
+    root_dir = os.path.dirname(os.path.dirname(__file__))
+    candidate_paths = [
+        os.path.join(root_dir, 'Config', 'config.yaml'),
+        os.path.join(root_dir, 'config', 'config.yaml'),
+    ]
+
+    config_path = None
+    for candidate in candidate_paths:
+        if os.path.exists(candidate):
+            config_path = candidate
+            break
+
+    if not config_path:
+        raise FileNotFoundError("Could not locate Config/config.yaml")
+
     with open(config_path, 'r') as config_file:
         return yaml.safe_load(config_file)
 

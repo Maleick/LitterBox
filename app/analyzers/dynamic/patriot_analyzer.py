@@ -1,6 +1,5 @@
 # app/analyzers/dynamic/patriot_analyzer.py
 
-import subprocess
 import re
 from .base import DynamicAnalyzer
 
@@ -12,30 +11,25 @@ class PatriotAnalyzer(DynamicAnalyzer):
         """
         self.pid = pid
         try:
-            tool_config = self.config['analysis']['dynamic']['patriot']
+            tool_config = self._resolve_tool_config('dynamic', 'patriot')
             command = tool_config['command'].format(
                 tool_path=tool_config['tool_path'],
                 pid=pid
             )
 
-            # Run the Patriot tool
-            process = subprocess.Popen(
+            result = self._execute_command(
                 command,
+                timeout=tool_config['timeout'],
                 shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True
             )
 
-            stdout, stderr = process.communicate(timeout=tool_config['timeout'])
-
             # Parse the output into structured data
-            parsed_findings = self._parse_output(stdout)
+            parsed_findings = self._parse_output(result.stdout)
 
             self.results = {
-                'status': 'completed' if process.returncode == 0 else 'failed',
+                'status': 'completed' if result.returncode == 0 else 'failed',
                 'findings': parsed_findings,
-                'errors': stderr if stderr else None
+                'errors': result.stderr if result.stderr else None
             }
 
         except Exception as e:

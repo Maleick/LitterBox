@@ -2,17 +2,36 @@
 
 import datetime
 import glob
+import hmac
 import json
 import os
 import shutil
+import subprocess
 from datetime import datetime
 from functools import wraps
 from flask import render_template, request, jsonify, Response, redirect
 from .utils import Utils
 from .analyzers.manager import AnalysisManager
 from .analyzers.blender import BlenderAnalyzer
-from .analyzers.fuzzy import FuzzyHashAnalyzer
+try:
+    from .analyzers.fuzzy import FuzzyHashAnalyzer
+    _FUZZY_IMPORT_ERROR = None
+except BaseException as fuzzy_import_error:  # noqa: BLE001
+    FuzzyHashAnalyzer = None
+    _FUZZY_IMPORT_ERROR = fuzzy_import_error
 from .analyzers.holygrail import HolyGrailAnalyzer
+from .execution.context import (
+    DEFAULT_REMOTE_ENV_PATH,
+    create_runner_for_target,
+    resolve_target_transport,
+)
+from .remote_credentials import (
+    delete_target_credentials,
+    list_target_credentials,
+    normalize_target_id,
+    resolve_remote_env_path,
+    upsert_target_credentials,
+)
 
 class RouteHelpers:
     """Centralized helper class to eliminate code duplication across routes"""
@@ -200,10 +219,174 @@ def register_routes(app):
     analysis_manager = AnalysisManager(app.config, logger=app.logger)
     route_helpers = RouteHelpers(app.config, app.logger)
     utils = route_helpers.utils
+    remote_env_path = resolve_remote_env_path(DEFAULT_REMOTE_ENV_PATH)
+
+    def _forbidden_response():
+        return "Forbidden", 403
+
+    def _is_localhost_request(request_obj):
+        return request_obj.remote_addr in {"127.0.0.1", "::1"}
+
+    def _configured_remote_targets():
+        return app.config.get("analysis", {}).get("remote", {}).get("targets", {}) or {}
+
+    def _masked_target_entry(target_entries, target_id):
+        empty_entry = {
+            "host": "",
+            "domain": "",
+            "account_type": "",
+            "username": "",
+            "password": "",
+            "updated_at": "",
+        }
+        try:
+            normalized_target = normalize_target_id(target_id)
+        except ValueError:
+            return empty_entry
+        return target_entries.get(normalized_target, empty_entry)
+
+    def _extract_post_value(key):
+        payload = request.get_json(silent=True) if request.is_json else None
+        if isinstance(payload, dict):
+            value = payload.get(key)
+        else:
+            value = request.form.get(key)
+        return value if isinstance(value, str) else ""
+
+    def _extract_request_value(key):
+        if request.method == "GET":
+            value = request.args.get(key)
+            return value if isinstance(value, str) else ""
+
+        value = _extract_post_value(key)
+        if value:
+            return value
+        query_value = request.args.get(key)
+        return query_value if isinstance(query_value, str) else ""
+
+    def _resolve_remote_env_path_for_request():
+        requested_path = _extract_request_value("env_path").strip()
+        return resolve_remote_env_path(requested_path or None)
+
+    def _validate_setup_token(submitted_token):
+        configured_token = os.environ.get("LITTERBOX_WIZARD_TOKEN")
+        if not configured_token:
+            return False
+        if not submitted_token:
+            return False
+        return hmac.compare_digest(submitted_token, configured_token)
 
     @app.route('/')
     def index():
         return render_template('upload.html', config=app.config)
+
+    @app.route('/setup/remote-credentials', methods=['GET'])
+    @error_handler
+    def setup_remote_credentials_page():
+        if not _is_localhost_request(request):
+            return _forbidden_response()
+
+        selected_env_path = _resolve_remote_env_path_for_request()
+        target_ids = list(_configured_remote_targets().keys())
+        existing_entries = list_target_credentials(selected_env_path)
+        masked_entries = {
+            target_id: _masked_target_entry(existing_entries, target_id)
+            for target_id in target_ids
+        }
+        return render_template(
+            'remote_credentials.html',
+            target_ids=target_ids,
+            existing_entries=masked_entries,
+            env_file_path=selected_env_path,
+            config=app.config,
+        )
+
+    @app.route('/setup/remote-credentials', methods=['POST'])
+    @error_handler
+    def setup_remote_credentials_save():
+        if not _is_localhost_request(request):
+            return _forbidden_response()
+
+        submitted_token = _extract_post_value("token").strip()
+        if not _validate_setup_token(submitted_token):
+            return _forbidden_response()
+
+        selected_env_path = _resolve_remote_env_path_for_request()
+        targets = _configured_remote_targets()
+        target_id = _extract_post_value("target_id").strip()
+        host = _extract_post_value("host").strip()
+        domain = _extract_post_value("domain").strip()
+        account_type = _extract_post_value("account_type").strip().lower()
+        username = _extract_post_value("username").strip()
+        password = _extract_post_value("password")
+
+        errors = {}
+        if target_id not in targets:
+            errors["target_id"] = "Unknown target_id"
+        if not host:
+            errors["host"] = "host is required"
+        if account_type not in {"domain", "local"}:
+            errors["account_type"] = "account_type must be domain or local"
+        if not username:
+            errors["username"] = "username is required"
+        if not password:
+            errors["password"] = "password is required"
+
+        if errors:
+            return jsonify({"status": "error", "errors": errors}), 400
+
+        upsert_target_credentials(
+            selected_env_path,
+            target_id,
+            {
+                "host": host,
+                "domain": domain,
+                "account_type": account_type,
+                "username": username,
+                "password": password,
+            },
+        )
+
+        masked_entries = list_target_credentials(selected_env_path)
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Remote credentials saved",
+                "target_id": target_id,
+                "credentials": _masked_target_entry(masked_entries, target_id),
+                "env_file_path": selected_env_path,
+            }
+        ), 200
+
+    @app.route('/setup/remote-credentials/delete', methods=['POST'])
+    @error_handler
+    def setup_remote_credentials_delete():
+        if not _is_localhost_request(request):
+            return _forbidden_response()
+
+        submitted_token = _extract_post_value("token").strip()
+        if not _validate_setup_token(submitted_token):
+            return _forbidden_response()
+
+        selected_env_path = _resolve_remote_env_path_for_request()
+        targets = _configured_remote_targets()
+        target_id = _extract_post_value("target_id").strip()
+
+        if target_id not in targets:
+            return jsonify({"status": "error", "error": "Unknown target_id"}), 400
+
+        deleted = delete_target_credentials(selected_env_path, target_id)
+        masked_entries = list_target_credentials(selected_env_path)
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Credentials deleted" if deleted else "No stored credentials found for target",
+                "target_id": target_id,
+                "deleted": deleted,
+                "credentials": _masked_target_entry(masked_entries, target_id),
+                "env_file_path": selected_env_path,
+            }
+        ), 200
 
     @app.route('/upload', methods=['POST'])
     @error_handler
@@ -255,17 +438,30 @@ def register_routes(app):
 
         app.logger.debug(f"POST request received. Performing {analysis_type} analysis.")
         is_pid = analysis_type == 'dynamic' and target.isdigit()
+        execution_target = _extract_execution_target(request, app.logger)
         
         if is_pid:
-            return _perform_pid_analysis(target, analysis_manager, route_helpers, app)
+            return _perform_pid_analysis(target, analysis_manager, route_helpers, app, execution_target)
         else:
-            return _perform_file_analysis(analysis_type, target, analysis_manager, route_helpers, app)
+            return _perform_file_analysis(
+                analysis_type,
+                target,
+                analysis_manager,
+                route_helpers,
+                app,
+                execution_target,
+            )
 
-    def _perform_pid_analysis(pid, analysis_manager, route_helpers, app):
+    def _perform_pid_analysis(pid, analysis_manager, route_helpers, app, execution_target=None):
         is_valid, error_msg = route_helpers.utils.validate_pid(pid)
         if not is_valid:
-            app.logger.debug(f"PID validation failed for PID {pid}. Reason: {error_msg}")
-            return jsonify({'error': error_msg}), 404
+            remote_cfg = app.config.get('analysis', {}).get('remote', {})
+            remote_requested = bool(execution_target) or (
+                bool(remote_cfg.get('enabled')) and bool(remote_cfg.get('default_target'))
+            )
+            if not remote_requested:
+                app.logger.debug(f"PID validation failed for PID {pid}. Reason: {error_msg}")
+                return jsonify({'error': error_msg}), 404
 
         result_folder = os.path.join(route_helpers.config['utils']['result_folder'], f'dynamic_{pid}')
         os.makedirs(result_folder, exist_ok=True)
@@ -273,11 +469,17 @@ def register_routes(app):
         cmd_args = _extract_and_validate_args(request, app.logger)
         
         app.logger.debug(f"Performing dynamic analysis on PID: {pid}")
-        results = analysis_manager.run_dynamic_analysis(pid, True, cmd_args)
+        results = analysis_manager.run_dynamic_analysis(
+            pid,
+            True,
+            cmd_args,
+            execution_target=execution_target,
+            artifact_destination=result_folder,
+        )
         
         return _handle_analysis_results(results, result_folder, 'dynamic_analysis_results.json', route_helpers, app)
 
-    def _perform_file_analysis(analysis_type, target, analysis_manager, route_helpers, app):
+    def _perform_file_analysis(analysis_type, target, analysis_manager, route_helpers, app, execution_target=None):
         if analysis_type == 'static' and target.isdigit():
             app.logger.debug(f"Static analysis requested on PID {target}. This is invalid.")
             return jsonify({'error': 'Cannot perform static analysis on PID'}), 400
@@ -297,19 +499,29 @@ def register_routes(app):
         
         if analysis_type == 'static':
             app.logger.debug(f"Performing static analysis on file: {file_path}")
-            results = analysis_manager.run_static_analysis(file_path)
+            results = analysis_manager.run_static_analysis(
+                file_path,
+                execution_target=execution_target,
+                artifact_destination=result_path,
+            )
             results_file = 'static_analysis_results.json'
         else:
             cmd_args = _extract_and_validate_args(request, app.logger)
             app.logger.debug(f"Performing dynamic analysis on target: {file_path}, is_pid: False")
-            results = analysis_manager.run_dynamic_analysis(file_path, False, cmd_args)
+            results = analysis_manager.run_dynamic_analysis(
+                file_path,
+                False,
+                cmd_args,
+                execution_target=execution_target,
+                artifact_destination=result_path,
+            )
             results_file = 'dynamic_analysis_results.json'
         
         return _handle_analysis_results(results, result_path, results_file, route_helpers, app)
 
     def _extract_and_validate_args(request, logger):
         try:
-            request_data = request.get_json() or {}
+            request_data = request.get_json(silent=True) or {}
             cmd_args = request_data.get('args', [])
             
             if not isinstance(cmd_args, list):
@@ -329,6 +541,25 @@ def register_routes(app):
         except Exception as e:
             logger.error(f"Error parsing request data: {e}")
             return []
+
+    def _extract_execution_target(request_obj, logger):
+        try:
+            query_target = request_obj.args.get('execution_target')
+            if query_target:
+                return query_target.strip()
+
+            payload = request_obj.get_json(silent=True) or {}
+            body_target = payload.get('execution_target')
+            if body_target is None:
+                return None
+
+            if not isinstance(body_target, str):
+                logger.warning("Ignoring non-string execution_target value")
+                return None
+            return body_target.strip() or None
+        except Exception as e:
+            logger.debug(f"Unable to extract execution target: {e}")
+            return None
 
     def _handle_analysis_results(results, result_path, results_filename, route_helpers, app):
         route_helpers.save_analysis_results(results, result_path, results_filename)
@@ -752,7 +983,13 @@ def register_routes(app):
         if analysis_type not in ['blender', 'fuzzy']:
             analysis_type = 'blender'
 
-        analyzer = BlenderAnalyzer(app.config, logger=app.logger) if analysis_type == 'blender' else FuzzyHashAnalyzer(app.config, logger=app.logger)
+        if analysis_type == 'fuzzy':
+            if FuzzyHashAnalyzer is None:
+                app.logger.error("Fuzzy analyzer unavailable: %s", _FUZZY_IMPORT_ERROR)
+                return jsonify({'error': 'Fuzzy analyzer unavailable on this host'}), 503
+            analyzer = FuzzyHashAnalyzer(app.config, logger=app.logger)
+        else:
+            analyzer = BlenderAnalyzer(app.config, logger=app.logger)
 
         if request.method == 'GET':
             payload_hash = request.args.get('hash')
@@ -920,6 +1157,7 @@ def register_routes(app):
         if request.method == 'GET':
             # Check if this is an analysis request
             target_hash = request.args.get('hash')
+            execution_target = _extract_execution_target(request, app.logger)
             
             if target_hash:
                 app.logger.debug(f"Starting BYOVD analysis for hash: {target_hash}")
@@ -949,7 +1187,11 @@ def register_routes(app):
                     
                     # Run analysis
                     analyzer = HolyGrailAnalyzer(app.config, logger=app.logger)
-                    results = analyzer.analyze(file_path)
+                    results = analyzer.analyze(
+                        file_path,
+                        execution_target=execution_target,
+                        artifact_destination=result_path,
+                    )
                     
                     app.logger.debug(f"Analysis completed with status: {results.get('status')}")
                     
@@ -1131,17 +1373,24 @@ def register_routes(app):
         static_section = analysis_config.get('static', {})
         dynamic_section = analysis_config.get('dynamic', {})
         holygrail_section = analysis_config.get('holygrail', {})
+        remote_section = analysis_config.get('remote', {})
+        remote_enabled = bool(remote_section.get('enabled', False))
+        local_fallback = bool(remote_section.get('local_fallback', True))
+        check_local_tools = (not remote_enabled) or local_fallback
 
-        # Check static analysis tools
-        for tool_name in static_section.keys():
-            _check_analysis_tool(static_section, tool_name, issues, app.logger)
+        if check_local_tools:
+            # Check static analysis tools
+            for tool_name in static_section.keys():
+                _check_analysis_tool(static_section, tool_name, issues, app.logger)
 
-        # Check dynamic analysis tools
-        for tool_name in dynamic_section.keys():
-            _check_analysis_tool(dynamic_section, tool_name, issues, app.logger)
+            # Check dynamic analysis tools
+            for tool_name in dynamic_section.keys():
+                _check_analysis_tool(dynamic_section, tool_name, issues, app.logger)
         
-        # Check HolyGrail tool
-        _check_holygrail_tool(holygrail_section, issues, app.logger)
+            # Check HolyGrail tool
+            _check_holygrail_tool(holygrail_section, issues, app.logger)
+
+        remote_status = _check_remote_targets(remote_section, issues, app.logger)
 
         static_tools = {tool: static_section.get(tool, {}).get('enabled', False) for tool in static_section.keys()}
         dynamic_tools = {tool: dynamic_section.get(tool, {}).get('enabled', False) for tool in dynamic_section.keys()}
@@ -1158,9 +1407,143 @@ def register_routes(app):
             'configuration': {
                 'static_analysis': static_tools,
                 'dynamic_analysis': dynamic_tools,
-                'holygrail_analysis': holygrail_status
+                'holygrail_analysis': holygrail_status,
+                'local_tool_validation': check_local_tools,
+                'remote_execution': remote_status,
             }
         }), 200 if status == 'ok' else 503
+
+    def _check_remote_targets(remote_config, issues, logger):
+        status = {
+            'enabled': bool(remote_config.get('enabled', False)),
+            'default_target': remote_config.get('default_target'),
+            'local_fallback': bool(remote_config.get('local_fallback', True)),
+            'targets': {},
+        }
+
+        if not status['enabled']:
+            return status
+
+        targets = remote_config.get('targets', {}) or {}
+        if not targets:
+            issues.append("Remote execution enabled but no targets are configured")
+            return status
+
+        for target_id, target_config in targets.items():
+            target_health = {
+                'host': target_config.get('host'),
+                'port': target_config.get('port', 22),
+                'user': target_config.get('user'),
+                'transport': resolve_target_transport(remote_config, target_config),
+                'tailscale_reachable': False,
+                'ssh_auth': None,
+                'winrm_auth': None,
+                'scanner_paths': {},
+                'issues': [],
+            }
+
+            host = target_config.get('host')
+            if host:
+                if host.endswith('.ts.net'):
+                    tailscale_ok, tailscale_note = _check_tailscale_reachability(host)
+                    target_health['tailscale_reachable'] = tailscale_ok
+                    if tailscale_note:
+                        target_health['issues'].append(tailscale_note)
+                        issues.append(f"Remote target {target_id}: {tailscale_note}")
+                else:
+                    target_health['tailscale_reachable'] = True
+            else:
+                target_health['issues'].append("Host is not configured")
+                issues.append(f"Remote target {target_id}: host is not configured")
+
+            try:
+                transport = target_health['transport']
+                runner = create_runner_for_target(
+                    target_id=target_id,
+                    target_config=target_config,
+                    remote_config=remote_config,
+                    logger=logger,
+                    remote_env_path=remote_env_path,
+                )
+                auth_ok = runner.check_connectivity()
+                if transport == 'winrm':
+                    target_health['winrm_auth'] = auth_ok
+                else:
+                    target_health['ssh_auth'] = auth_ok
+
+                if not auth_ok:
+                    message = (
+                        "WinRM authentication/reachability check failed"
+                        if transport == 'winrm'
+                        else "SSH authentication/reachability check failed"
+                    )
+                    target_health['issues'].append(message)
+                    issues.append(f"Remote target {target_id}: {message}")
+
+                scanner_paths = _extract_remote_scanner_paths(target_config.get('scanner_paths', {}))
+                for scanner_key, path_data in scanner_paths.items():
+                    exists = False
+                    if auth_ok:
+                        exists = runner.path_exists(path_data['path'], is_dir=path_data['is_dir'])
+                    target_health['scanner_paths'][scanner_key] = {
+                        'path': path_data['path'],
+                        'exists': exists,
+                    }
+                    if auth_ok and not exists:
+                        message = f"Scanner path not found ({scanner_key}): {path_data['path']}"
+                        target_health['issues'].append(message)
+                        issues.append(f"Remote target {target_id}: {message}")
+            except Exception as e:
+                message = f"Remote target check failed: {str(e)}"
+                target_health['issues'].append(message)
+                issues.append(f"Remote target {target_id}: {message}")
+
+            status['targets'][target_id] = target_health
+
+        return status
+
+    def _extract_remote_scanner_paths(scanner_paths):
+        extracted = {}
+        for scanner_name, scanner_data in (scanner_paths or {}).items():
+            if isinstance(scanner_data, str):
+                extracted[f"{scanner_name}.tool_path"] = {
+                    'path': scanner_data,
+                    'is_dir': False,
+                }
+                continue
+
+            if not isinstance(scanner_data, dict):
+                continue
+
+            for key, value in scanner_data.items():
+                if not isinstance(value, str):
+                    continue
+                if not key.endswith('_path'):
+                    continue
+                extracted[f"{scanner_name}.{key}"] = {
+                    'path': value,
+                    'is_dir': key in {'policies_path', 'results_path'} or value.endswith(('/', '\\')),
+                }
+        return extracted
+
+    def _check_tailscale_reachability(host):
+        if not host:
+            return False, "No host configured for remote target"
+
+        try:
+            result = subprocess.run(
+                ['tailscale', 'status'],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                return False, "Unable to query tailscale status"
+            return host in result.stdout, (None if host in result.stdout else f"Host {host} not present in tailscale status")
+        except FileNotFoundError:
+            return False, "tailscale CLI not found on host"
+        except Exception as e:
+            return False, f"Tailscale reachability check failed: {str(e)}"
 
     def _check_holygrail_tool(holygrail_config, issues, logger):
         """Check HolyGrail tool configuration and availability"""

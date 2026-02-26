@@ -55,6 +55,8 @@ The repository is a brownfield Python/Flask codebase with runtime scanner execut
 | Use recommended auto-mode defaults (`quick`, `balanced`, research/plan-check/verifier enabled) | Keep planning flow fast while retaining quality gates | ✓ Good |
 | Infer brief from repository context because `--auto` prompt had no explicit `@idea` document | User explicitly requested auto execution; README + codebase map provide sufficient intent baseline | ⚠️ Revisit |
 | Keep API contract compatibility as a first-class requirement | Existing MCP/client integrations depend on stable route behavior | — Pending |
+| Use SSH remoting over Tailscale for remote Windows execution (no custom agent daemon) | Reduces deployment complexity and aligns with existing Windows OpenSSH support | ✓ Good |
+| Lock next remote phase to WinRM runtime path with explicit `domain` target | Domain-controller host requirements and credentialed execution need a transport model beyond SSH-key-only assumptions | ✓ Good |
 
 ---
-*Last updated: 2026-02-25 after initialization*
+*Last updated: 2026-02-25 after operational wizard/smoke execution and phase 2.2 lock*

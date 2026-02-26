@@ -1,4 +1,3 @@
-import subprocess
 import json
 import logging
 from .base import DynamicAnalyzer
@@ -10,21 +9,20 @@ class HollowsHunterAnalyzer(DynamicAnalyzer):
 
     def analyze(self, directory):
         try:
-            tool_config = self.config['analysis']['dynamic']['hollows_hunter']
+            tool_config = self._resolve_tool_config('dynamic', 'hollows_hunter')
             command = tool_config['command'].format(
                 tool_path=tool_config['tool_path'],
                 directory=directory
             )
                         
-            process = subprocess.Popen(
+            result = self._execute_command(
                 command,
+                timeout=tool_config.get('timeout'),
                 shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True
             )
             
-            stdout, stderr = process.communicate()
+            stdout = result.stdout
+            stderr = result.stderr
             if stderr:
                 self.logger.warning(f"HollowsHunter stderr: {stderr}")
             

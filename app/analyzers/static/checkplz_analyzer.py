@@ -1,7 +1,5 @@
 # app/analyzers/static/checkplz_analyzer.py
 
-import subprocess
-import re
 import os
 from .base import StaticAnalyzer
 
@@ -11,32 +9,37 @@ class CheckPlzAnalyzer(StaticAnalyzer):
         Analyzes a file using ThreatCheck tool specified in the config.
         """
         try:
-            tool_config = self.config['analysis']['static']['checkplz']
+            tool_config = self._resolve_tool_config('static', 'checkplz')
+            analysis_target = self._resolve_target_path(file_path)
+            tool_path = tool_config['tool_path']
+
+            if self._get_execution_context().get('is_remote'):
+                formatted_tool_path = tool_path
+                formatted_target = analysis_target
+            else:
+                formatted_tool_path = os.path.abspath(tool_path)
+                formatted_target = os.path.abspath(analysis_target)
+
             command = tool_config['command'].format(
-                tool_path=os.path.abspath(tool_config['tool_path']),
-                file_path=os.path.abspath(file_path)
+                tool_path=formatted_tool_path,
+                file_path=formatted_target,
             )
-
-            process = subprocess.Popen(
+            result = self._execute_command(
                 command,
+                timeout=tool_config.get('timeout', 300),
                 shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True,
-                cwd=os.path.dirname(os.path.abspath(tool_config['tool_path']))  # Added working directory
+                cwd=self._safe_dirname(tool_path),
             )
-
-            stdout, stderr = process.communicate(timeout=tool_config.get('timeout', 300))
-            results = self._parse_output(stdout)
+            parsed_results = self._parse_output(result.stdout)
 
             self.results = {
-                'status': 'completed' if process.returncode == 0 else 'failed',
+                'status': 'completed' if result.returncode == 0 else 'failed',
                 'scan_info': {
                     'target': file_path,
                     'tool': 'CheckPlz'
                 },
-                'findings': results,
-                'errors': stderr if stderr else None
+                'findings': parsed_results,
+                'errors': result.stderr if result.stderr else None
             }
 
         except Exception as e:

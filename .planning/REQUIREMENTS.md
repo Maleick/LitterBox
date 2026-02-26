@@ -25,6 +25,22 @@
 - [ ] **ANL-03**: Per-analyzer failures are isolated and reported without corrupting successful analyzer outputs in the same run
 - [ ] **ANL-04**: Persisted result artifacts remain retrievable for file, PID, and BYOVD analysis flows
 
+### Remote Execution Over Tailscale
+
+- [ ] **REM-01**: Linux-hosted LitterBox can execute scanner commands on remote Windows targets over SSH (Tailscale reachable hosts)
+- [ ] **REM-02**: Uploaded samples are staged to remote target workdir before analysis and analysis artifacts are retrieved into local `Results/` tree
+- [ ] **REM-03**: Analysis routes support deterministic target routing via default target plus optional request-level `execution_target` override
+- [ ] **REM-04**: Remote-first execution policy supports configurable local fallback behavior with explicit error path when fallback is disabled
+- [ ] **REM-05**: `/health` reports remote preflight checks (tailscale visibility, SSH auth, remote scanner path existence)
+
+### WinRM Runtime Path
+
+- [ ] **WRM-01**: Remote config supports default transport semantics and target-level override (`ssh`/`winrm`) without breaking existing SSH targets
+- [ ] **WRM-02**: Dedicated `analysis.remote.targets.domain` represents domain-controller execution host independently of `server2025`
+- [ ] **WRM-03**: Runtime can execute scanner commands over WinRM using credentials loaded from `.env.remote` with domain/local account normalization
+- [ ] **WRM-04**: `/health` includes WinRM preflight diagnostics (reachability, auth, and remote scanner path checks) for WinRM targets
+- [ ] **WRM-05**: Migration from temporary `server2025 -> domain host` mapping to explicit `domain` target is documented and compatibility-safe
+
 ### Code Quality & Testability
 
 - [ ] **QLT-01**: Routing/orchestration logic is decomposed from monolithic modules into maintainable boundaries without behavior regression
@@ -79,6 +95,16 @@ Which phases cover which requirements.
 | ANL-02 | Phase 2 | Pending |
 | ANL-03 | Phase 2 | Pending |
 | ANL-04 | Phase 2 | Pending |
+| REM-01 | Phase 2.1 | Pending |
+| REM-02 | Phase 2.1 | Pending |
+| REM-03 | Phase 2.1 | Pending |
+| REM-04 | Phase 2.1 | Pending |
+| REM-05 | Phase 2.1 | Pending |
+| WRM-01 | Phase 2.2 | Pending |
+| WRM-02 | Phase 2.2 | Pending |
+| WRM-03 | Phase 2.2 | Pending |
+| WRM-04 | Phase 2.2 | Pending |
+| WRM-05 | Phase 2.2 | Pending |
 | QLT-01 | Phase 3 | Pending |
 | QLT-02 | Phase 3 | Pending |
 | QLT-03 | Phase 3 | Pending |
@@ -88,10 +114,10 @@ Which phases cover which requirements.
 | OPS-04 | Phase 4 | Pending |
 
 **Coverage:**
-- v1 requirements: 19 total
-- Mapped to phases: 19
+- v1 requirements: 29 total
+- Mapped to phases: 29
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-02-25*
-*Last updated: 2026-02-25 after roadmap creation*
+*Last updated: 2026-02-25 after phase 2.2 insertion (WinRM lock)*

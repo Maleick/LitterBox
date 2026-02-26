@@ -1,4 +1,3 @@
-import subprocess
 import json
 import os
 from .base import StaticAnalyzer
@@ -9,34 +8,40 @@ class StringsAnalyzer(StaticAnalyzer):
         Analyzes a file using strings analysis tool specified in the config.
         """
         try:
-            tool_config = self.config['analysis']['static']['stringnalyzer']
+            tool_config = self._resolve_tool_config('static', 'stringnalyzer')
+            analysis_target = self._resolve_target_path(file_path)
+            tool_path = tool_config['tool_path']
+
+            if self._get_execution_context().get('is_remote'):
+                formatted_tool_path = tool_path
+                formatted_target = analysis_target
+            else:
+                formatted_tool_path = os.path.abspath(tool_path)
+                formatted_target = os.path.abspath(analysis_target)
+
             command = tool_config['command'].format(
-                tool_path=os.path.abspath(tool_config['tool_path']),
-                file_path=os.path.abspath(file_path)
+                tool_path=formatted_tool_path,
+                file_path=formatted_target,
             )
 
-            process = subprocess.Popen(
+            result = self._execute_command(
                 command,
+                timeout=tool_config.get('timeout', 300),
                 shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True,
-                cwd=os.path.dirname(os.path.abspath(tool_config['tool_path']))
+                cwd=self._safe_dirname(tool_path),
             )
-
-            stdout, stderr = process.communicate(timeout=tool_config.get('timeout', 300))
             
             # Parse the JSON output
-            results = self._parse_output(stdout)
+            results = self._parse_output(result.stdout)
             
             self.results = {
-                'status': 'completed' if process.returncode == 0 else 'failed',
+                'status': 'completed' if result.returncode == 0 else 'failed',
                 'scan_info': {
                     'target': file_path,
                     'tool': 'Stringnalyzer'
                 },
                 'findings': results,
-                'errors': stderr if stderr else None
+                'errors': result.stderr if result.stderr else None
             }
 
         except Exception as e:

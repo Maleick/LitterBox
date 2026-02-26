@@ -3,12 +3,14 @@ import json
 import threading
 import logging
 import traceback
+import shlex
 from .base import DynamicAnalyzer
 
 class RedEdrAnalyzer(DynamicAnalyzer):
     def __init__(self, config):
         super().__init__(config)
         self.tool_process = None
+        self.tool_handle = None
         self.target_name = None
         self.results = {}
         self.collected_output = []
@@ -36,21 +38,41 @@ class RedEdrAnalyzer(DynamicAnalyzer):
     def start_tool(self, target_name):
         """Start the RedEdr tool in monitoring mode"""
         try:
+            if self._get_execution_context().get('is_remote'):
+                self.results = {
+                    'status': 'skipped',
+                    'error': 'RedEdr live monitoring is not supported for remote execution'
+                }
+                return False
+
             self.target_name = target_name
-            tool_config = self.config['analysis']['dynamic']['rededr']
+            tool_config = self._resolve_tool_config('dynamic', 'rededr')
             command = tool_config['command'].format(
                 tool_path=tool_config['tool_path'],
                 process_name=target_name
             )
-            
-            self.tool_process = subprocess.Popen(
-                command,
-                shell=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                universal_newlines=True,
-                bufsize=1
-            )
+
+            runner = self._get_runner()
+            if runner:
+                command_parts = shlex.split(command, posix=False)
+                executable = command_parts[0]
+                args = command_parts[1:]
+                self.tool_handle = runner.start_process(
+                    executable=executable,
+                    args=args,
+                    cwd=self._safe_dirname(tool_config['tool_path']),
+                )
+                self.tool_process = self.tool_handle.get('process')
+            else:
+                self.tool_process = subprocess.Popen(
+                    command,
+                    shell=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    universal_newlines=True,
+                    bufsize=1
+                )
+                self.tool_handle = {'process': self.tool_process, 'pid': self.tool_process.pid}
             
             # Reset stop flag
             self._stop_reading.clear()
@@ -382,8 +404,12 @@ class RedEdrAnalyzer(DynamicAnalyzer):
         
         if self.tool_process:
             try:
-                self.tool_process.terminate()
-                self.tool_process.wait(timeout=5)
+                runner = self._get_runner()
+                if runner and self.tool_handle:
+                    runner.terminate_process(self.tool_handle)
+                else:
+                    self.tool_process.terminate()
+                    self.tool_process.wait(timeout=5)
                 
                 # Wait for reader thread to finish
                 if self.output_thread and self.output_thread.is_alive():

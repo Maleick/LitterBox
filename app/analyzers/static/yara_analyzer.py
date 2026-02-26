@@ -1,4 +1,3 @@
-import subprocess
 import re
 import os
 from .base import StaticAnalyzer
@@ -9,35 +8,32 @@ class YaraStaticAnalyzer(StaticAnalyzer):
         Analyzes a file using YARA rules specified in the config.
         """
         try:
-            tool_config = self.config['analysis']['static']['yara']
+            tool_config = self._resolve_tool_config('static', 'yara')
+            analysis_target = self._resolve_target_path(file_path)
             command = tool_config['command'].format(
                 tool_path=tool_config['tool_path'],
                 rules_path=tool_config['rules_path'],
-                file_path=file_path
+                file_path=analysis_target
             )
 
-            process = subprocess.Popen(
+            result = self._execute_command(
                 command,
+                timeout=tool_config['timeout'],
                 shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True
             )
-
-            stdout, stderr = process.communicate(timeout=tool_config['timeout'])
-            matches = self._parse_output(stdout)
+            matches = self._parse_output(result.stdout)
 
             # Map the matched strings to the rule definitions
             self._map_output_to_rule_strings(matches)
 
             self.results = {
-                'status': 'completed' if process.returncode == 0 else 'failed',
+                'status': 'completed' if result.returncode == 0 else 'failed',
                 'scan_info': {
                     'target': file_path,
                     'rules_file': tool_config['rules_path']
                 },
                 'matches': matches,
-                'errors': stderr if stderr else None
+                'errors': result.stderr if result.stderr else None
             }
 
         except Exception as e:

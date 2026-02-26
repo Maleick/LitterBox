@@ -188,7 +188,8 @@ class LitterBoxClient:
     # =============================================================================
 
     def analyze_file(self, target: str, analysis_type: str, cmd_args: Optional[List[str]] = None,
-                    wait_for_completion: bool = True, verify_file: bool = False) -> Dict:
+                    wait_for_completion: bool = True, verify_file: bool = False,
+                    execution_target: Optional[str] = None) -> Dict:
         """Run analysis on a file or process with enhanced validation."""
         self._validate_analysis_type(analysis_type, ['static', 'dynamic'])
         
@@ -213,6 +214,8 @@ class LitterBoxClient:
 
         params = {'wait': '1' if wait_for_completion else '0'}
         data = self._validate_command_args(cmd_args)
+        if execution_target:
+            data['execution_target'] = execution_target
         
         response = self._make_request('POST', f'/analyze/{analysis_type}/{target}', 
                                      params=params, json=data)
@@ -227,11 +230,14 @@ class LitterBoxClient:
             
         return result
 
-    def analyze_holygrail(self, file_hash: str, wait_for_completion: bool = True) -> Dict:
+    def analyze_holygrail(self, file_hash: str, wait_for_completion: bool = True,
+                         execution_target: Optional[str] = None) -> Dict:
         """Run HolyGrail BYOVD analysis on a kernel driver."""
         params = {'hash': file_hash}
         if wait_for_completion:
             params['wait'] = '1'
+        if execution_target:
+            params['execution_target'] = execution_target
             
         response = self._make_request('GET', '/holygrail', params=params)
         return response.json()

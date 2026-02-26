@@ -1,6 +1,5 @@
 # app/analyzers/dynamic/moneta_analyzer.py
 
-import subprocess
 from .base import DynamicAnalyzer
 import re
 from datetime import datetime
@@ -9,28 +8,27 @@ class MonetaAnalyzer(DynamicAnalyzer):
     def analyze(self, pid):
         self.pid = pid
         try:
-            tool_config = self.config['analysis']['dynamic']['moneta']
+            tool_config = self._resolve_tool_config('dynamic', 'moneta')
             command = tool_config['command'].format(
                 tool_path=tool_config['tool_path'],
                 pid=pid
             )
             
-            process = subprocess.Popen(
+            result = self._execute_command(
                 command,
+                timeout=tool_config.get('timeout'),
                 shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True
             )
             
-            stdout, stderr = process.communicate()
+            stdout = result.stdout
+            stderr = result.stderr
             
             # Consider successful if we got output, regardless of return code
             findings = self._parse_output(stdout)
             has_results = bool(stdout and findings.get('raw_output'))
             
             self.results = {
-                'status': 'completed' if has_results else 'failed',  # Changed condition
+                'status': 'completed' if has_results else 'failed',
                 'findings': findings,
                 'errors': stderr if stderr else None
             }
