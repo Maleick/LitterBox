@@ -26,9 +26,9 @@ analysis:
     init_wait_time: 5  # Time in seconds to wait for payload initialization
 
   remote:
-    enabled: false
+    enabled: true
     transport: "ssh"  # Default transport; targets can override (planned winrm support).
-    default_target: "win11"
+    default_target: "domain"
     local_fallback: true
     targets:
       win11:
@@ -211,4 +211,3 @@ analysis:
       tool_path: ".\\Scanners\\RedEdr\\RedEdr.exe"
       command: "{tool_path} -e --trace {process_name}"
       timeout: 120
-
