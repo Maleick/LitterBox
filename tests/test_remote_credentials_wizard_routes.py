@@ -37,6 +37,23 @@ def test_wizard_get_uses_custom_env_path(monkeypatch, tmp_path):
     body = response.get_data(as_text=True)
     assert str(env_path) in body
     assert "Remote Credential Setup" in body
+    assert '<option value="domain"' in body
+    assert '<option value="win11"' not in body
+    assert '<option value="server2025"' not in body
+
+
+def test_wizard_table_hides_empty_placeholder_rows(monkeypatch, tmp_path):
+    client = _make_client(monkeypatch)
+    env_path = tmp_path / ".env.remote.custom"
+
+    response = client.get(
+        "/setup/remote-credentials",
+        query_string={"env_path": str(env_path)},
+        environ_overrides=_localhost(),
+    )
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "No stored credential entries found for configured WinRM targets." in body
 
 
 def test_wizard_save_and_delete_with_custom_env_path(monkeypatch, tmp_path):

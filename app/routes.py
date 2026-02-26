@@ -227,8 +227,32 @@ def register_routes(app):
     def _is_localhost_request(request_obj):
         return request_obj.remote_addr in {"127.0.0.1", "::1"}
 
+    def _configured_remote_config():
+        return app.config.get("analysis", {}).get("remote", {}) or {}
+
     def _configured_remote_targets():
-        return app.config.get("analysis", {}).get("remote", {}).get("targets", {}) or {}
+        return _configured_remote_config().get("targets", {}) or {}
+
+    def _credential_targets():
+        remote_cfg = _configured_remote_config()
+        targets = remote_cfg.get("targets", {}) or {}
+        credential_targets = []
+        for target_id, target_cfg in targets.items():
+            if resolve_target_transport(remote_cfg, target_cfg or {}) != "winrm":
+                continue
+            credential_targets.append(
+                {
+                    "id": target_id,
+                    "host": ((target_cfg or {}).get("host") or "").strip(),
+                }
+            )
+        return credential_targets
+
+    def _has_masked_entry(entry):
+        return any(
+            (entry.get(field) or "").strip()
+            for field in ("host", "domain", "account_type", "username", "password", "updated_at")
+        )
 
     def _masked_target_entry(target_entries, target_id):
         empty_entry = {
@@ -287,16 +311,27 @@ def register_routes(app):
             return _forbidden_response()
 
         selected_env_path = _resolve_remote_env_path_for_request()
-        target_ids = list(_configured_remote_targets().keys())
+        credential_targets = _credential_targets()
+        target_ids = [target["id"] for target in credential_targets]
         existing_entries = list_target_credentials(selected_env_path)
-        masked_entries = {
-            target_id: _masked_target_entry(existing_entries, target_id)
-            for target_id in target_ids
-        }
+        stored_entries = []
+        for target in credential_targets:
+            target_id = target["id"]
+            entry = _masked_target_entry(existing_entries, target_id)
+            if not _has_masked_entry(entry):
+                continue
+            stored_entries.append(
+                {
+                    "target_id": target_id,
+                    "target_host": target["host"],
+                    "entry": entry,
+                }
+            )
         return render_template(
             'remote_credentials.html',
             target_ids=target_ids,
-            existing_entries=masked_entries,
+            credential_targets=credential_targets,
+            stored_entries=stored_entries,
             env_file_path=selected_env_path,
             config=app.config,
         )
@@ -312,7 +347,7 @@ def register_routes(app):
             return _forbidden_response()
 
         selected_env_path = _resolve_remote_env_path_for_request()
-        targets = _configured_remote_targets()
+        credential_target_ids = {target["id"] for target in _credential_targets()}
         target_id = _extract_post_value("target_id").strip()
         host = _extract_post_value("host").strip()
         domain = _extract_post_value("domain").strip()
@@ -321,7 +356,7 @@ def register_routes(app):
         password = _extract_post_value("password")
 
         errors = {}
-        if target_id not in targets:
+        if target_id not in credential_target_ids:
             errors["target_id"] = "Unknown target_id"
         if not host:
             errors["host"] = "host is required"
@@ -369,10 +404,10 @@ def register_routes(app):
             return _forbidden_response()
 
         selected_env_path = _resolve_remote_env_path_for_request()
-        targets = _configured_remote_targets()
+        credential_target_ids = {target["id"] for target in _credential_targets()}
         target_id = _extract_post_value("target_id").strip()
 
-        if target_id not in targets:
+        if target_id not in credential_target_ids:
             return jsonify({"status": "error", "error": "Unknown target_id"}), 400
 
         deleted = delete_target_credentials(selected_env_path, target_id)
