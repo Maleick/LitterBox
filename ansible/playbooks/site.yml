@@ -1,0 +1,27 @@
+---
+# site.yml — Full LitterBox DC + CIS hardening playbook
+#
+# Runs: DC promotion → reboot → CIS hardening → reboot
+#
+# Usage:
+#   # Install dependencies first:
+#   ansible-galaxy install -r requirements.yml
+#
+#   # Dry-run (check + diff, no changes):
+#   ansible-playbook -i inventory.yml playbooks/site.yml --check --diff \
+#     -e "dc_safe_mode_password=<DSRM_password>"
+#
+#   # Apply:
+#   ansible-playbook -i inventory.yml playbooks/site.yml \
+#     -e "dc_safe_mode_password=<DSRM_password>"
+#
+#   # Or store secret in vault:
+#   ansible-playbook -i inventory.yml playbooks/site.yml --ask-vault-pass
+#
+# From VanguardForge: use scripts/kara/run_litterbox_dc.sh (handles secrets automatically)
+
+- name: Step 1 — Promote to Domain Controller
+  import_playbook: setup-dc.yml
+
+- name: Step 2 — Apply CIS Windows Server 2025 Benchmark
+  import_playbook: cis-harden.yml

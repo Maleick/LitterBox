@@ -1,0 +1,20 @@
+---
+# Ansible Galaxy requirements for LitterBox DC + CIS hardening
+# Install with: ansible-galaxy install -r requirements.yml
+
+roles:
+  - name: ansible-lockdown.Windows_2025_CIS
+    src: https://github.com/ansible-lockdown/Windows-2025-CIS
+    version: main
+    # CIS Benchmark for Windows Server 2025
+    # Applies Level 1 controls by default; Level 2 available via win_cis_level: "2"
+    # Docs: https://github.com/ansible-lockdown/Windows-2025-CIS
+
+collections:
+  - name: ansible.windows
+    version: ">=2.0.0"
+  - name: community.windows
+    version: ">=2.0.0"
+  - name: microsoft.ad
+    version: ">=1.0.0"
+    # Required for win_domain / domain promotion tasks

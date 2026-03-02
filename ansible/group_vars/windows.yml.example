@@ -1,0 +1,31 @@
+---
+# Group variables for the 'windows' host group
+# Copy to group_vars/windows.yml and populate secrets via ansible-vault
+# NEVER commit group_vars/windows.yml — it contains credentials
+
+# ── WinRM Connection ───────────────────────────────────────────────────────────
+ansible_connection: winrm
+ansible_winrm_transport: basic
+ansible_winrm_scheme: http
+ansible_winrm_server_cert_validation: ignore
+ansible_port: 5985
+
+# ── Domain Controller ─────────────────────────────────────────────────────────
+dc_domain_name: "corp.vanguardforge.local"
+dc_domain_netbios: "CORP"
+# dc_safe_mode_password: set via ansible-vault or -e at runtime
+
+# ── CIS Hardening ─────────────────────────────────────────────────────────────
+# Windows-2025-CIS role variables
+# See: https://github.com/ansible-lockdown/Windows-2025-CIS/blob/main/defaults/main.yml
+win_cis_level: "1"                    # Level 1 = baseline; "2" = strict (may break sandbox)
+win_skip_reboot: false                # Allow reboots during hardening
+win_cis_cat1: true                    # Category 1 controls
+win_cis_cat2: true                    # Category 2 controls
+win_cis_cat3: true                    # Category 3 controls
+
+# Controls to skip — LitterBox sandbox requires some relaxed settings:
+# - WinRM unencrypted: required until CIS HTTPS setup is complete (skip temporarily)
+# - Defender sample submission: must remain disabled for sandbox operation
+# Add rule numbers as needed after running in check mode first:
+# ansible-playbook playbooks/cis-harden.yml --check

@@ -6,7 +6,7 @@
 # Configuration
 $Script:Config = @{
     InstallDir          = "C:\LitterBox"
-    RepoUrl            = "https://github.com/BlackSnufkin/LitterBox.git"
+    RepoUrl            = "https://github.com/Maleick/LitterBox.git"  # VanguardForge fork
     DebloatRepoUrl     = "https://github.com/W4RH4WK/Debloat-Windows-10.git"
     DebloatPath        = "C:\Debloat-Windows-10"
     WebPort            = 1337
@@ -197,7 +197,20 @@ function Run-DebloatScripts {
     Write-Log "Debloat round $Round completed" "SUCCESS"
 }
 
+function Test-IsServerSKU {
+    # Returns $true on any Windows Server SKU — debloat scripts target consumer editions only
+    $Caption = (Get-CimInstance Win32_OperatingSystem).Caption
+    return $Caption -match "Server"
+}
+
 function Prep-SandBox {
+    # Debloat-Windows-10 targets consumer editions; skip on Windows Server SKUs
+    if (Test-IsServerSKU) {
+        Write-Log "Windows Server SKU detected — skipping Win10 debloat scripts (not applicable)" "WARNING"
+        Write-Log "Server-specific hardening will be applied by Ansible post-boot (CIS benchmark)" "INFO"
+        return
+    }
+
     $RepoPath = Clone-DebloatRepo
 
     # Round 1
@@ -211,7 +224,7 @@ function Prep-SandBox {
 
     Write-Log "Windows debloating completed!" "SUCCESS"
     Write-Log "Reboot required to complete all changes" "WARNING"
-    
+
     # Cleanup - Remove debloat repository
     Write-Log "Cleaning up debloat repository..."
     Set-Location C:\
@@ -375,6 +388,36 @@ function Start-LitterBox {
 }
 
 
+function Enable-WinRM {
+    # Enable WinRM so Ansible can connect post-boot to run DC promotion and CIS hardening.
+    # Uses HTTP (port 5985) on the internal Docker network — encrypted HTTPS enforced later by CIS.
+    Write-Log "Enabling WinRM for Ansible remote management"
+    try {
+        # Start WinRM service and configure remoting
+        Enable-PSRemoting -Force -SkipNetworkProfileCheck | Out-Null
+
+        # Allow Basic auth (required for Ansible winrm connection plugin without Kerberos)
+        Set-Item -Path "WSMan:\localhost\Service\Auth\Basic" -Value $true
+        Set-Item -Path "WSMan:\localhost\Service\AllowUnencrypted" -Value $true
+
+        # Ensure WinRM listens on all interfaces (not just loopback)
+        Set-Item -Path "WSMan:\localhost\Client\TrustedHosts" -Value "*" -Force
+
+        # Open firewall for WinRM HTTP (Ansible → port 5985)
+        New-NetFirewallRule -DisplayName "WinRM HTTP (Ansible)" -Direction Inbound `
+            -Protocol TCP -LocalPort 5985 -Action Allow -Profile Any -Force `
+            -ErrorAction SilentlyContinue | Out-Null
+
+        Write-Log "WinRM enabled on port 5985 — Ansible can now connect" "SUCCESS"
+        Write-Log "Note: CIS hardening (post-boot Ansible) will enforce encrypted WinRM" "INFO"
+    }
+    catch {
+        Write-Log "Failed to enable WinRM: $($_.Exception.Message)" "WARNING"
+        Write-Log "Run: winrm quickconfig -force && winrm set winrm/config/service @{AllowUnencrypted='true'}" "WARNING"
+    }
+}
+
+
 # Main execution flow
 try {
     Write-Log "=== LitterBox Malware Analysis Platform Setup Started ===" "SUCCESS"
@@ -388,8 +431,10 @@ try {
     Configure-Firewall
     Create-StartupFiles
     Setup-AutoStart
+    Enable-WinRM        # Must run after firewall config; enables Ansible post-boot access
     Start-LitterBox
     Write-Log "=== LitterBox Setup Completed Successfully ===" "SUCCESS"
+    Write-Log "Next step: run scripts/kara/run_litterbox_dc.sh to promote to DC + apply CIS" "INFO"
 }
 catch {
     Write-Log "Setup failed: $($_.Exception.Message)" "ERROR"

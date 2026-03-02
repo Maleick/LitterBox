@@ -1,0 +1,88 @@
+---
+# Playbook: Promote LitterBox Windows Server 2025 to Domain Controller
+#
+# Prerequisites:
+#   1. LitterBox first-boot complete (install.ps1 finished, WinRM enabled)
+#   2. ansible-galaxy install -r requirements.yml
+#   3. inventory.yml populated (copy from inventory.example.yml)
+#
+# Usage:
+#   ansible-playbook -i inventory.yml playbooks/setup-dc.yml \
+#     -e "dc_safe_mode_password=<DSRM_password>"
+#
+# Idempotent: safe to re-run; skips if domain already exists.
+
+- name: Promote Windows Server 2025 to Domain Controller
+  hosts: litterbox
+  gather_facts: true
+
+  vars:
+    dc_domain_name: "{{ dc_domain_name | default('corp.vanguardforge.local') }}"
+    dc_domain_netbios: "{{ dc_domain_netbios | default('CORP') }}"
+    dc_install_dns: true
+
+  tasks:
+    - name: Check current domain membership
+      ansible.windows.win_shell: |
+        (Get-WmiObject Win32_ComputerSystem).DomainRole
+      register: domain_role
+      changed_when: false
+
+    # DomainRole: 0=Standalone workstation, 1=Member workstation, 2=Standalone server,
+    # 3=Member server, 4=Backup DC, 5=Primary DC
+    - name: Report current role
+      ansible.builtin.debug:
+        msg: "Current DomainRole: {{ domain_role.stdout | trim }} (5=PDC, 4=BDC, 2=standalone)"
+
+    - name: Install AD DS Windows feature
+      ansible.windows.win_feature:
+        name:
+          - AD-Domain-Services
+          - DNS
+          - RSAT-AD-Tools
+          - RSAT-DNS-Server
+        include_management_tools: true
+        state: present
+      register: adds_install
+      when: domain_role.stdout | trim | int < 4
+
+    - name: Promote to Domain Controller (creates new forest)
+      microsoft.ad.domain:
+        dns_domain_name: "{{ dc_domain_name }}"
+        domain_netbios_name: "{{ dc_domain_netbios }}"
+        safe_mode_password: "{{ dc_safe_mode_password }}"
+        install_dns: "{{ dc_install_dns }}"
+        state: present
+      register: dc_promote
+      when: domain_role.stdout | trim | int < 4
+
+    - name: Reboot after DC promotion
+      ansible.windows.win_reboot:
+        reboot_timeout: 600
+        post_reboot_delay: 60
+        msg: "Rebooting to complete DC promotion"
+      when:
+        - dc_promote is defined
+        - dc_promote.reboot_required | default(false)
+
+    - name: Wait for AD DS to come online post-reboot
+      ansible.windows.win_service:
+        name: NTDS
+        state: started
+      retries: 10
+      delay: 30
+      register: ntds_check
+      until: ntds_check.state == "running"
+      when: dc_promote is defined
+
+    - name: Confirm domain controller promotion
+      ansible.windows.win_shell: |
+        $role = (Get-WmiObject Win32_ComputerSystem).DomainRole
+        $domain = (Get-ADDomain -ErrorAction SilentlyContinue).DNSRoot
+        "DomainRole=$role Domain=$domain"
+      register: dc_confirm
+      changed_when: false
+
+    - name: Show DC status
+      ansible.builtin.debug:
+        msg: "{{ dc_confirm.stdout | trim }}"

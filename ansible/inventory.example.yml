@@ -1,0 +1,42 @@
+---
+# Ansible inventory for LitterBox Windows Server 2025
+# Copy to inventory.yml and set real values — inventory.yml is gitignored
+#
+# The Windows VM is accessed via WinRM on the docker01 host loopback (127.0.0.1:5985),
+# which maps to the KVM VM's port 5985 inside the dockurr/windows container.
+#
+# Run from docker01 (or any host that can reach docker01:5985).
+
+all:
+  hosts:
+    litterbox:
+      # docker01 host address — WinRM port 5985 is bound to 127.0.0.1 on docker01
+      # If running Ansible from docker01 itself:
+      ansible_host: 127.0.0.1
+      ansible_port: 5985
+      # If running Ansible from another machine (replace with docker01's IP/hostname):
+      # ansible_host: docker01.example.com
+      # ansible_port: 5985
+
+      # WinRM connection — credentials set in Docker compose (USERNAME/LITTERBOX_PASSWORD)
+      ansible_user: "litterbox"
+      ansible_password: "{{ vault_litterbox_password }}"  # store in ansible-vault
+
+      # Connection settings
+      ansible_connection: winrm
+      ansible_winrm_transport: basic
+      ansible_winrm_server_cert_validation: ignore
+      ansible_winrm_scheme: http   # HTTP on internal network; CIS will enforce HTTPS post-hardening
+
+  vars:
+    # Domain Controller settings — override per deployment
+    dc_domain_name: "corp.vanguardforge.local"
+    dc_domain_netbios: "CORP"
+    dc_safe_mode_password: "{{ vault_dc_safe_mode_password }}"
+
+    # CIS hardening level (1 = Level 1 baseline, 2 = Level 2 strict)
+    win_cis_level: "1"
+
+    # Skip specific CIS controls that conflict with LitterBox sandbox requirements
+    # Add rule IDs here after reviewing CIS report; see playbooks/cis-harden.yml comments
+    win_cis_skip_rules: []

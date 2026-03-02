@@ -1,0 +1,6 @@
+# Ansible secrets — never commit
+inventory.yml
+group_vars/windows.yml
+host_vars/*/vars.yml
+*.vault
+.vault_pass

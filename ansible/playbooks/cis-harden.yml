@@ -1,0 +1,76 @@
+---
+# Playbook: Apply Windows Server 2025 CIS Benchmark (ansible-lockdown/Windows-2025-CIS)
+#
+# Prerequisites:
+#   1. DC promotion complete (run setup-dc.yml first)
+#   2. ansible-galaxy install -r requirements.yml
+#
+# IMPORTANT: Run in check mode first to review impact before applying:
+#   ansible-playbook -i inventory.yml playbooks/cis-harden.yml --check --diff
+#
+# Usage:
+#   ansible-playbook -i inventory.yml playbooks/cis-harden.yml
+#
+# CIS Level:
+#   Level 1 (default) = baseline; recommended for most deployments
+#   Level 2 = strict; some controls may conflict with LitterBox analysis features
+#   Set win_cis_level: "2" in group_vars/windows.yml to enable Level 2
+#
+# Known LitterBox/CIS conflicts to review:
+#   - WinRM AllowUnencrypted: CIS disables plain HTTP; may break Ansible connectivity
+#     → Fix: switch to HTTPS WinRM (port 5986) before running CIS hardening
+#   - Windows Defender sample submission: LitterBox disables this; CIS may re-enable
+#     → Add CIS rule override in group_vars/windows.yml win_cis_skip_rules
+#   - Anonymous access settings: some sandbox tools require relaxed auth
+
+- name: Apply CIS Windows Server 2025 Benchmark
+  hosts: litterbox
+  gather_facts: true
+
+  pre_tasks:
+    - name: Snapshot current WinRM config before CIS hardening
+      ansible.windows.win_shell: |
+        winrm get winrm/config/service
+      register: winrm_pre
+      changed_when: false
+
+    - name: Show pre-hardening WinRM state
+      ansible.builtin.debug:
+        msg: "{{ winrm_pre.stdout_lines }}"
+
+  roles:
+    - role: ansible-lockdown.Windows_2025_CIS
+      vars:
+        win_cis_level: "{{ win_cis_level | default('1') }}"
+        win_skip_reboot: "{{ win_skip_reboot | default(false) }}"
+
+  post_tasks:
+    - name: Re-enable WinRM after CIS hardening (if locked out)
+      # CIS may disable AllowUnencrypted — re-enable for continued Ansible access
+      # Remove this task once you migrate Ansible to HTTPS (port 5986)
+      ansible.windows.win_shell: |
+        Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $true
+        Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $true
+        Restart-Service WinRM
+      changed_when: true
+      when: win_cis_level == "1"  # Skip for Level 2 (enforce full compliance)
+
+    - name: Verify WinRM still responding
+      ansible.windows.win_ping:
+
+    - name: Generate CIS compliance report
+      ansible.windows.win_shell: |
+        $report = @{
+          Timestamp = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+          Hostname  = $env:COMPUTERNAME
+          Domain    = (Get-WmiObject Win32_ComputerSystem).Domain
+          CISLevel  = "{{ win_cis_level | default('1') }}"
+          OSCaption = (Get-CimInstance Win32_OperatingSystem).Caption
+        }
+        $report | ConvertTo-Json
+      register: cis_report
+      changed_when: false
+
+    - name: Show CIS compliance summary
+      ansible.builtin.debug:
+        msg: "{{ cis_report.stdout | from_json }}"
