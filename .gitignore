@@ -8,3 +8,10 @@ venv/
 Scanners/HolyGrail/Analysis
 .env.remote
 .env.remote.*
+
+# ── Tool/agent artifacts ──
+.gsd/
+.bg-shell/
+.serena/
+.codex/
+.claude/settings.local.json
