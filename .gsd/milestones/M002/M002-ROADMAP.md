@@ -50,10 +50,10 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: Infrastructure & API Skill** `risk:low` `depends:[]`
+- [x] **S01: Infrastructure & API Skill** `risk:low` `depends:[]`
   > After this: Docker compose targets Server 2025, MCP server is removed, and a LitterBox API skill file documents all available endpoints for agent tool definitions.
 
-- [ ] **S02: LLM Adapter & Agent Tool Router** `risk:high` `depends:[S01]`
+- [x] **S02: LLM Adapter & Agent Tool Router** `risk:high` `depends:[S01]`
   > After this: A Python test harness sends a natural language message, litellm calls the configured LLM, the LLM returns function-calling tool invocations, and the tool router executes the correct GrumpyCats client methods with valid parameters. Trust-aware routing proven: cloud config strips binary data, local config passes it through.
 
 - [ ] **S03: Chat UI & WebSocket Streaming** `risk:high` `depends:[S02]`

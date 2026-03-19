@@ -3,8 +3,8 @@ import json
 from typing import Optional, Dict, List, Any
 from mcp.server.fastmcp import FastMCP
 
-# Import the optimized LitterBox client
-from optimized_litterbox_client import LitterBoxClient, LitterBoxError, LitterBoxAPIError
+# Import the LitterBox client
+from grumpycat import LitterBoxClient, LitterBoxError, LitterBoxAPIError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
